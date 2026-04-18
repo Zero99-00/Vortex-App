@@ -8,6 +8,7 @@ import threading
 # Import engine components
 from models.dashboard import dashboard_gui
 from models.logic_units.stt_engine import STTEngine
+from models.logic_units.llm_engine import LLMEngine  # <--- WE IMPORTED THE LLM HERE
 from models.logic_units.engine_state import set_engine, set_engine_starting
 
 def auth_gui(self):
@@ -126,8 +127,16 @@ def auth_gui(self):
     def background_engine_load():
         try:
             set_engine_starting(True)
+            
+            # 1. Load STT Engine
+            append_loading_log("[+] Loading Whisper...", "engine")
             self.temp_engine = STTEngine(model_size="medium")
             self.temp_engine.load_engine_to_vram()
+            
+            # 2. Load LLM Engine
+            append_loading_log("[+] Loading Qwen LLM...", "engine")
+            self.temp_llm = LLMEngine() # <--- WE INITIALIZE THE LLM HERE
+            
             self.engine_load_success = True
         except Exception as e:
             print(f"Engine load error: {e}")
@@ -140,16 +149,19 @@ def auth_gui(self):
     def check_engine_loaded():
         if self.engine_load_finished:
             if self.engine_load_success:
-                append_loading_log("[+] Engine loaded to VRAM", "engine")
+                append_loading_log("[+] Engines loaded to VRAM", "engine")
                 set_engine(self.temp_engine) # Save globally
                 
-                # Start the listening loop in a background thread
+                # Start BOTH listening loops in background threads
                 append_loading_log("[+] Starting microphone...", "success")
                 threading.Thread(target=self.temp_engine.start_listening, daemon=True).start()
                 
+                append_loading_log("[+] Starting LLM Polling...", "success")
+                threading.Thread(target=self.temp_llm.start_polling, daemon=True).start() # <--- WE START THE LLM LOOP HERE
+                
                 self.after(500, finish_login)
             else:
-                append_loading_log("[X] Engine failed to load", "error")
+                append_loading_log("[X] Engines failed to load", "error")
                 self.loading_status.configure(text="Engine Load Failed", text_color="#FF3333")
                 self.after(2000, self.reset_login_ui)
         else:
@@ -180,8 +192,7 @@ def auth_gui(self):
     def execute_login():
         if verify_login(self):
             append_loading_log("[+] Credentials verified", "success")
-            self.loading_status.configure(text="Booting AI Engine to VRAM...", text_color="#FFD700")
-            append_loading_log("[+] Starting Whisper Engine...", "engine")
+            self.loading_status.configure(text="Booting AI Engines to VRAM...", text_color="#FFD700")
             
             # Start the heavy loading in the background
             threading.Thread(target=background_engine_load, daemon=True).start()

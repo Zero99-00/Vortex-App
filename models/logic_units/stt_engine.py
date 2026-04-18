@@ -2,7 +2,7 @@ import sys
 try:
     sys.stdout.reconfigure(encoding='utf-8')
 except AttributeError:
-    pass  # Ignores error if stdout is already redirected by the UI
+    pass  
 
 import speech_recognition as sr
 import whisper
@@ -66,7 +66,7 @@ class STTEngine:
         self.call_count = 0
         self.is_running = False 
         self.auto_restart_triggered = False 
-        self.current_state = "INITIALIZING..." # Added State Tracking
+        self.current_state = "INITIALIZING..."
         
         self.r = sr.Recognizer()
         self.r.dynamic_energy_threshold = True
@@ -83,29 +83,29 @@ class STTEngine:
         self._init_database()
 
     def _init_database(self):
-        self.db_path = os.path.join(get_base_path(), "stt_store.db")
-        # FIX 1: Open and close connection immediately to prevent UI database locks
+        self.db_path = os.path.join(get_base_path(), "engine_core.db")
         with sqlite3.connect(self.db_path, timeout=10) as conn:
             cursor = conn.cursor()
+            # UPDATED: Table name and columns to match the shared workflow
             cursor.execute("""
-                CREATE TABLE IF NOT EXISTS transcripts (
+                CREATE TABLE IF NOT EXISTS conversation_logs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    text TEXT,
+                    user_query TEXT,
+                    ai_response TEXT,
                     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             """)
-            cursor.execute("DELETE FROM transcripts")
+            cursor.execute("DELETE FROM conversation_logs") # Clear on startup
             conn.commit()
-        status_row("Database", "stt_store.db", "wiped and ready", "ok")
+        status_row("Database", "engine_core.db", "Logs table ready", "ok")
 
     def _store_in_db(self, text):
         if not text: return
-        # FIX 2: Thread-safe DB writing
         try:
             with sqlite3.connect(self.db_path, timeout=10) as conn:
                 cursor = conn.cursor()
-                cursor.execute("INSERT INTO transcripts (text) VALUES (?)", (text,))
-                cursor.execute("DELETE FROM transcripts WHERE id NOT IN (SELECT id FROM transcripts ORDER BY id DESC LIMIT 50)")
+                # UPDATED: Insert query and set response to 'thinking...'
+                cursor.execute("INSERT INTO conversation_logs (user_query, ai_response) VALUES (?, ?)", (text, "thinking..."))
                 conn.commit()
         except sqlite3.Error as e:
             log_err(f"Database write error: {e}")
@@ -136,18 +136,19 @@ class STTEngine:
 
     def stop(self):
         self.is_running = False
-        self.current_state = "OFFLINE" # Added State Tracking
+        self.current_state = "OFFLINE"
         print(f"\n{YL}>> ENGINE STOP SIGNAL SENT. WAITING FOR SAFE EXIT...{R}\n")
 
     def _get_target_language(self, source):
-        self.current_state = "CHOOSING LANGUAGE..." # Added State Tracking
+        self.current_state = "CHOOSING LANGUAGE..."
         while self.target_language is None and self.is_running:
             print(f"\n  {MG}[?]{R} {BLD}Say your language:{R} {GR}English{R} or {YL}Arabic{R} ...")
             try:
                 lang_audio = self.r.listen(source, timeout=3, phrase_time_limit=5)
-                self.current_state = "PROCESSING..." # Added State Tracking
+                self.current_state = "PROCESSING..."
                 with open("temp_lang.wav", "wb") as f: f.write(lang_audio.get_wav_data())
 
+                # Use tiny/base internally for speed in language detection
                 lang_text = self.model.transcribe("temp_lang.wav", language="en", fp16=self.use_fp16)['text'].lower().strip()
                 os.remove("temp_lang.wav")
 
@@ -162,7 +163,7 @@ class STTEngine:
                     status_row("Language", "ENGLISH", "standard", "ok")
 
             except sr.WaitTimeoutError:
-                self.current_state = "CHOOSING LANGUAGE..." # Reset State Tracking
+                self.current_state = "CHOOSING LANGUAGE..."
                 pass 
             except Exception as e:
                 log_err(f"Language detection issue: {e}")
@@ -176,7 +177,7 @@ class STTEngine:
         with sr.Microphone() as source:
             section("MICROPHONE")
             log_info("Calibrating for ambient noise — stay quiet for 2s...")
-            self.current_state = "CALIBRATING..." # Added State Tracking
+            self.current_state = "CALIBRATING..."
             self.r.adjust_for_ambient_noise(source, duration=2.0)
             status_row("Microphone", "Calibrated", "locked", "ok")
 
@@ -203,13 +204,13 @@ class STTEngine:
                 try:
                     divider(MG)
                     log_info("Waiting for speech...")
-                    self.current_state = "LISTENING..." # Added State Tracking
+                    self.current_state = "LISTENING..."
                     
                     audio = self.r.listen(source, timeout=1, phrase_time_limit=10)
 
                     if not self.is_running: break
 
-                    self.current_state = "PROCESSING..." # Added State Tracking
+                    self.current_state = "PROCESSING..."
                     if self.device == "cuda": torch.cuda.empty_cache()
                     log_info("Transcribing...")
 
@@ -251,5 +252,5 @@ class STTEngine:
                 except Exception as e:
                     log_err(f"Transcription error: {e}")
             
-            self.current_state = "OFFLINE" # Added State Tracking
+            self.current_state = "OFFLINE"
             print(f"\n{RD}>> ENGINE SUCCESSFULLY OFFLINE.{R}\n")
