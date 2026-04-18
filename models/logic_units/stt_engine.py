@@ -66,6 +66,7 @@ class STTEngine:
         self.call_count = 0
         self.is_running = False 
         self.auto_restart_triggered = False 
+        self.current_state = "INITIALIZING..." # Added State Tracking
         
         self.r = sr.Recognizer()
         self.r.dynamic_energy_threshold = True
@@ -135,13 +136,16 @@ class STTEngine:
 
     def stop(self):
         self.is_running = False
+        self.current_state = "OFFLINE" # Added State Tracking
         print(f"\n{YL}>> ENGINE STOP SIGNAL SENT. WAITING FOR SAFE EXIT...{R}\n")
 
     def _get_target_language(self, source):
+        self.current_state = "CHOOSING LANGUAGE..." # Added State Tracking
         while self.target_language is None and self.is_running:
             print(f"\n  {MG}[?]{R} {BLD}Say your language:{R} {GR}English{R} or {YL}Arabic{R} ...")
             try:
                 lang_audio = self.r.listen(source, timeout=3, phrase_time_limit=5)
+                self.current_state = "PROCESSING..." # Added State Tracking
                 with open("temp_lang.wav", "wb") as f: f.write(lang_audio.get_wav_data())
 
                 lang_text = self.model.transcribe("temp_lang.wav", language="en", fp16=self.use_fp16)['text'].lower().strip()
@@ -158,6 +162,7 @@ class STTEngine:
                     status_row("Language", "ENGLISH", "standard", "ok")
 
             except sr.WaitTimeoutError:
+                self.current_state = "CHOOSING LANGUAGE..." # Reset State Tracking
                 pass 
             except Exception as e:
                 log_err(f"Language detection issue: {e}")
@@ -171,6 +176,7 @@ class STTEngine:
         with sr.Microphone() as source:
             section("MICROPHONE")
             log_info("Calibrating for ambient noise — stay quiet for 2s...")
+            self.current_state = "CALIBRATING..." # Added State Tracking
             self.r.adjust_for_ambient_noise(source, duration=2.0)
             status_row("Microphone", "Calibrated", "locked", "ok")
 
@@ -197,11 +203,13 @@ class STTEngine:
                 try:
                     divider(MG)
                     log_info("Waiting for speech...")
+                    self.current_state = "LISTENING..." # Added State Tracking
                     
                     audio = self.r.listen(source, timeout=1, phrase_time_limit=10)
 
                     if not self.is_running: break
 
+                    self.current_state = "PROCESSING..." # Added State Tracking
                     if self.device == "cuda": torch.cuda.empty_cache()
                     log_info("Transcribing...")
 
@@ -243,4 +251,5 @@ class STTEngine:
                 except Exception as e:
                     log_err(f"Transcription error: {e}")
             
+            self.current_state = "OFFLINE" # Added State Tracking
             print(f"\n{RD}>> ENGINE SUCCESSFULLY OFFLINE.{R}\n")

@@ -1,9 +1,13 @@
 import customtkinter as ctk
+import time
 from models.logic_units.engine_state import get_engine
 
 class StatusPanel(ctk.CTkFrame):
     def __init__(self, master):
         super().__init__(master, fg_color="#121212", corner_radius=15)
+
+        # Track when the dashboard was opened for the Uptime counter
+        self.start_time = time.time()
 
         self.header_frame = ctk.CTkFrame(self, fg_color="transparent")
         self.header_frame.pack(fill="x", padx=40, pady=(40, 20))
@@ -15,7 +19,6 @@ class StatusPanel(ctk.CTkFrame):
         self.stats_frame.pack(expand=True, fill="both", padx=30, pady=(0, 30))
         self.stats_frame.grid_columnconfigure((0, 1), weight=1)
 
-        # Modified to return the value label so we can update it later!
         def create_modern_card(parent, row, col, icon, title, value_text, is_progress=False, progress_val=0.0):
             card = ctk.CTkFrame(parent, fg_color="#1A1A1A", border_color="#333333", border_width=1, corner_radius=10, height=120)
             card.grid(row=row, column=col, padx=10, pady=10, sticky="nsew")
@@ -46,7 +49,6 @@ class StatusPanel(ctk.CTkFrame):
         
         # Row 1
         create_modern_card(self.stats_frame, 1, 0, "⚡", "Motor Draw", "2.4 Amps")
-        # Save a reference to the Audio Status label so we can change it dynamically
         self.audio_status_label = create_modern_card(self.stats_frame, 1, 1, "🗣️", "Audio Subsystem", "🔴 OFFLINE")
         
         # Row 2
@@ -54,18 +56,35 @@ class StatusPanel(ctk.CTkFrame):
         create_modern_card(self.stats_frame, 2, 1, "🧭", "Movement Status", "IDLE / STATIONARY")
 
         # Row 3
-        create_modern_card(self.stats_frame, 3, 0, "⏱️", "System Uptime", "02:14:30")
+        self.uptime_label = create_modern_card(self.stats_frame, 3, 0, "⏱️", "System Uptime", "00:00:00")
         
-        # Start the background checking loop
-        self.update_audio_status()
+        # Start the background loop to update stats dynamically
+        self.update_dynamic_stats()
 
-    def update_audio_status(self):
+    def update_dynamic_stats(self):
+        # 1. Update Uptime Timer
+        elapsed = int(time.time() - self.start_time)
+        hours, remainder = divmod(elapsed, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        self.uptime_label.configure(text=f"{hours:02d}:{minutes:02d}:{seconds:02d}")
+
+        # 2. Update Audio Subsystem Status
         engine = get_engine()
-        # Check if the engine exists and is actively running the microphone loop
         if engine and getattr(engine, 'is_running', False):
-            self.audio_status_label.configure(text="🟢 LISTENING...", text_color="#00FF00")
+            # Fetch the current state from the engine (defaults to LISTENING if not set)
+            current_state = getattr(engine, 'current_state', 'LISTENING...').upper()
+            
+            # Change color based on the state for that extra polish
+            if "PROCESS" in current_state:
+                color = "#FFD700"  # Yellow
+            elif "CHOOSE" in current_state or "LANGUAGE" in current_state:
+                color = "#00FFFF"  # Cyan
+            else:
+                color = "#00FF00"  # Green
+                
+            self.audio_status_label.configure(text=f"🟢 {current_state}", text_color=color)
         else:
             self.audio_status_label.configure(text="🔴 OFFLINE", text_color="#D32F2F")
             
-        # Loop this check every 1 second (1000 milliseconds)
-        self.after(1000, self.update_audio_status)
+        # Loop this check every 1 second
+        self.after(1000, self.update_dynamic_stats)
