@@ -3,36 +3,42 @@ from PIL import Image
 from models.logic_units.auth__ import verify_login
 import os
 import tkinter as tk
+import threading
+
+# Import engine components
+from models.dashboard import dashboard_gui
+from models.logic_units.stt_engine import STTEngine
+from models.logic_units.engine_state import set_engine, set_engine_starting
 
 def auth_gui(self):
     self.title('Vortex | Authorization Page')
     self.geometry(f"1300x700+{(self.winfo_screenwidth() - 1300) // 2}+{(self.winfo_screenheight() - 700) // 2}")
+    
+    # --- ANTI-SPAM LOCK & THREAD STATES ---
+    self.is_authenticating = False 
+    self.engine_load_finished = False
+    self.engine_load_success = False
     
     # --- BULLETPROOF PATH LOGIC ---
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     ico_path = os.path.join(base_dir, "images", "icon.ico")
     png_path = os.path.join(base_dir, "images", "icon.png")
     
-    # New Image Paths for the Eye Toggle
     eye_path = os.path.join(base_dir, "images", "eye.png")
     closed_eye_path = os.path.join(base_dir, "images", "closed_eye.png")
         
     try:
         self.iconbitmap(ico_path) 
     except:
-        pass # Suppressed non-fatal terminal warnings
+        pass 
 
     # --- MAIN UI FRAME ---
     self.login_frame = ctk.CTkFrame(
-        self, 
-        fg_color="#121212", 
-        border_color="#D32F2F", 
-        border_width=2, 
-        corner_radius=10
+        self, fg_color="#121212", border_color="#D32F2F", 
+        border_width=2, corner_radius=10
     )
     self.login_frame.place(relx=0.5, rely=0.5, anchor="center")
 
-    # The Logo Image
     try:
         raw_img = Image.open(png_path)
         icon_image = ctk.CTkImage(light_image=raw_img, dark_image=raw_img, size=(140, 90))
@@ -42,10 +48,8 @@ def auth_gui(self):
         print(f"Frame image missing: {e}")
 
     self.title_label = ctk.CTkLabel(
-        self.login_frame, 
-        text="SYSTEM ACCESS", 
-        font=("Verdana", 24, "bold"), 
-        text_color="#D32F2F"
+        self.login_frame, text="SYSTEM ACCESS", 
+        font=("Verdana", 24, "bold"), text_color="#D32F2F"
     )
     self.title_label.pack(pady=(0, 30), padx=50)
 
@@ -62,36 +66,30 @@ def auth_gui(self):
     )
     self.password_entry.pack(pady=(0, 30), padx=50)
     
-    # --- LOAD EYE IMAGES ---
     try:
-        # Resize to 20x20 so it fits nicely in the entry box
         open_eye_raw = Image.open(eye_path)
         closed_eye_raw = Image.open(closed_eye_path)
         self.open_eye_img = ctk.CTkImage(light_image=open_eye_raw, dark_image=open_eye_raw, size=(20, 20))
         self.closed_eye_img = ctk.CTkImage(light_image=closed_eye_raw, dark_image=closed_eye_raw, size=(20, 20))
-    except Exception as e:
-        print(f"Could not load eye PNGs. Make sure eye.png and closed_eye.png exist. Error: {e}")
+    except:
         self.open_eye_img = None
         self.closed_eye_img = None
 
-    # --- THE EYE TOGGLE ---
     def toggle_password():
         if self.password_entry.cget("show") == "*":
             self.password_entry.configure(show="")
-            self.toggle_btn.configure(image=self.open_eye_img) # Show Open Eye
+            self.toggle_btn.configure(image=self.open_eye_img)
         else:
             self.password_entry.configure(show="*")
-            self.toggle_btn.configure(image=self.closed_eye_img) # Show Closed Eye
+            self.toggle_btn.configure(image=self.closed_eye_img)
 
-    # Set initial image to closed eye, remove text completely
     self.toggle_btn = ctk.CTkButton(
         self.login_frame, text="", image=self.closed_eye_img, width=30, height=30, 
-        fg_color="#1E1E1E", bg_color="#1E1E1E", hover_color="#333333", 
-        command=toggle_password
+        fg_color="#1E1E1E", bg_color="#1E1E1E", hover_color="#333333", command=toggle_password
     )
     self.toggle_btn.place(in_=self.password_entry, relx=0.92, rely=0.5, anchor="center")
     
-    # --- IMPROVED LOADING UI (Hidden by default) ---
+    # --- IMPROVED LOADING UI ---
     self.loading_bar = ctk.CTkProgressBar(
         self.login_frame, width=220, mode="indeterminate", progress_color="#D32F2F"
     )
@@ -100,37 +98,126 @@ def auth_gui(self):
         font=("Consolas", 12), text_color="gray"
     )
 
+    self.loading_log = ctk.CTkTextbox(
+        self.login_frame, width=280, height=120, fg_color="#1E1E1E",
+        text_color="#FFFFFF", font=("Consolas", 11), border_width=1, border_color="#333333",
+    )
+    self.loading_log.insert("0.0", "[+] Login ready. Waiting for action...\n")
+    self.loading_log.configure(state="disabled")
+    
+    self.loading_log.tag_config("success", foreground="#00FF00")
+    self.loading_log.tag_config("error", foreground="#FF4444")
+    self.loading_log.tag_config("engine", foreground="#FFB84D")
+    self.loading_log.tag_config("ui", foreground="#BB86FC")
+
+    def append_loading_log(message, tag=None):
+        try:
+            self.loading_log.configure(state="normal")
+            if tag:
+                self.loading_log.insert("end", message + "\n", tag)
+            else:
+                self.loading_log.insert("end", message + "\n")
+            self.loading_log.see("end")
+            self.loading_log.configure(state="disabled")
+        except:
+            pass
+
+    # --- THE ENGINE BACKGROUND THREAD ---
+    def background_engine_load():
+        try:
+            set_engine_starting(True)
+            self.temp_engine = STTEngine(model_size="medium")
+            self.temp_engine.load_engine_to_vram()
+            self.engine_load_success = True
+        except Exception as e:
+            print(f"Engine load error: {e}")
+            self.engine_load_success = False
+        finally:
+            set_engine_starting(False)
+            self.engine_load_finished = True
+
+    # --- UI POLLING LOOP ---
+    def check_engine_loaded():
+        if self.engine_load_finished:
+            if self.engine_load_success:
+                append_loading_log("[+] Engine loaded to VRAM", "engine")
+                set_engine(self.temp_engine) # Save globally
+                
+                # Start the listening loop in a background thread
+                append_loading_log("[+] Starting microphone...", "success")
+                threading.Thread(target=self.temp_engine.start_listening, daemon=True).start()
+                
+                self.after(500, finish_login)
+            else:
+                append_loading_log("[X] Engine failed to load", "error")
+                self.loading_status.configure(text="Engine Load Failed", text_color="#FF3333")
+                self.after(2000, self.reset_login_ui)
+        else:
+            # Check again in 300ms if not finished
+            self.after(300, check_engine_loaded)
+
     # --- LOGIN TRANSITION LOGIC ---
     def handle_login_click(event=None):
-        # 1. Hide the form fields and buttons
+        if self.is_authenticating: return
+        self.is_authenticating = True
+        self.engine_load_finished = False
+        self.engine_load_success = False
+        
         self.username_entry.pack_forget()
         self.password_entry.pack_forget()
-        self.toggle_btn.place_forget() 
+        self.toggle_btn.place_forget()
         self.login_btn.pack_forget()
         
-        # 2. Update text and show the upgraded loading sequence
         self.title_label.configure(text="AUTHENTICATING...")
         self.loading_bar.pack(pady=(0, 10))
-        self.loading_status.pack(pady=(0, 30))
+        self.loading_status.pack(pady=(0, 10))
+        self.loading_log.pack(pady=(0, 20), padx=50)
         self.loading_bar.start()
         
-        # 3. Wait 1.5 seconds for visual effect, then run your actual auth logic
-        self.after(1500, execute_login)
+        append_loading_log("[+] Checking credentials...")
+        self.after(500, execute_login)
 
     def execute_login():
-        self.loading_bar.stop()
-        # Call your existing verify logic
-        verify_login(self)
+        if verify_login(self):
+            append_loading_log("[+] Credentials verified", "success")
+            self.loading_status.configure(text="Booting AI Engine to VRAM...", text_color="#FFD700")
+            append_loading_log("[+] Starting Whisper Engine...", "engine")
+            
+            # Start the heavy loading in the background
+            threading.Thread(target=background_engine_load, daemon=True).start()
+            
+            # Start checking if it's done
+            self.after(300, check_engine_loaded)
+        else:
+            append_loading_log("[X] Credentials verification failed", "error")
+            self.loading_status.configure(text="Invalid credentials", text_color="#FF3333")
+            self.after(1200, self.reset_login_ui)
 
-    # Clean function to restore UI if login fails
+    def finish_login():
+        self.loading_bar.stop()
+        append_loading_log("[+] UI loaded", "ui")
+        append_loading_log("[+] Entering dashboard...", "success")
+        self.loading_status.configure(text="✓ Ready! Loading dashboard...", text_color="#00FF00")
+        def transition():
+            self.login_frame.destroy()
+            dashboard_gui(self)
+        self.after(600, transition)
+
     def reset_login_ui():
+        self.is_authenticating = False 
         self.loading_bar.pack_forget()
         self.loading_status.pack_forget()
+        self.loading_log.pack_forget()
         self.title_label.configure(text="SYSTEM ACCESS")
         self.username_entry.pack(pady=(0, 20), padx=50)
         self.password_entry.pack(pady=(0, 30), padx=50)
         self.toggle_btn.place(in_=self.password_entry, relx=0.92, rely=0.5, anchor="center")
         self.login_btn.pack(pady=(0, 40), padx=50)
+        self.loading_log.configure(state="normal")
+        self.loading_log.delete("0.0", "end")
+        self.loading_log.insert("0.0", "[+] Login ready. Waiting for action...\n")
+        self.loading_log.configure(state="disabled")
+        self.loading_status.configure(text="Verifying secure connection...", text_color="gray")
         
     self.reset_login_ui = reset_login_ui
 

@@ -1,4 +1,5 @@
 import customtkinter as ctk
+from models.logic_units.engine_state import get_engine
 
 class StatusPanel(ctk.CTkFrame):
     def __init__(self, master):
@@ -14,6 +15,7 @@ class StatusPanel(ctk.CTkFrame):
         self.stats_frame.pack(expand=True, fill="both", padx=30, pady=(0, 30))
         self.stats_frame.grid_columnconfigure((0, 1), weight=1)
 
+        # Modified to return the value label so we can update it later!
         def create_modern_card(parent, row, col, icon, title, value_text, is_progress=False, progress_val=0.0):
             card = ctk.CTkFrame(parent, fg_color="#1A1A1A", border_color="#333333", border_width=1, corner_radius=10, height=120)
             card.grid(row=row, column=col, padx=10, pady=10, sticky="nsew")
@@ -30,22 +32,40 @@ class StatusPanel(ctk.CTkFrame):
                 prog = ctk.CTkProgressBar(prog_frame, progress_color="#D32F2F", fg_color="#333333", height=12)
                 prog.pack(side="left", fill="x", expand=True, padx=(0, 15))
                 prog.set(progress_val) 
-                ctk.CTkLabel(prog_frame, text=value_text, font=("Consolas", 16, "bold"), text_color="white").pack(side="right")
+                val_label = ctk.CTkLabel(prog_frame, text=value_text, font=("Consolas", 16, "bold"), text_color="white")
+                val_label.pack(side="right")
+                return val_label
             else:
-                ctk.CTkLabel(card, text=value_text, font=("Consolas", 24, "bold"), text_color="white").pack(anchor="w", padx=20, pady=(5, 10))
+                val_label = ctk.CTkLabel(card, text=value_text, font=("Consolas", 24, "bold"), text_color="white")
+                val_label.pack(anchor="w", padx=20, pady=(5, 10))
+                return val_label
 
         # Row 0
         create_modern_card(self.stats_frame, 0, 0, "🔋", "Core Battery", "85%", is_progress=True, progress_val=0.85)
-        create_modern_card(self.stats_frame, 0, 1, "📍", "Global Coordinates", "X: 14.25  Y: -5.80")
+        create_modern_card(self.stats_frame, 0, 1, "🌡️", "Control Unit Temp", "42°C")
         
         # Row 1
-        create_modern_card(self.stats_frame, 1, 0, "🌡️", "Control Unit Temp", "42°C")
-        create_modern_card(self.stats_frame, 1, 1, "⚡", "Motor Draw", "2.4 Amps")
+        create_modern_card(self.stats_frame, 1, 0, "⚡", "Motor Draw", "2.4 Amps")
+        # Save a reference to the Audio Status label so we can change it dynamically
+        self.audio_status_label = create_modern_card(self.stats_frame, 1, 1, "🗣️", "Audio Subsystem", "🔴 OFFLINE")
         
         # Row 2
-        create_modern_card(self.stats_frame, 2, 0, "🗣️", "Audio Subsystem", "LISTENING...")
-        create_modern_card(self.stats_frame, 2, 1, "⚠️", "Diagnostics", "SYSTEM NOMINAL")
+        create_modern_card(self.stats_frame, 2, 0, "⚠️", "Diagnostics", "SYSTEM NOMINAL")
+        create_modern_card(self.stats_frame, 2, 1, "🧭", "Movement Status", "IDLE / STATIONARY")
 
-        # Row 3 (FIXED ICON)
-        create_modern_card(self.stats_frame, 3, 0, "🧭", "Movement Status", "IDLE / STATIONARY")
-        create_modern_card(self.stats_frame, 3, 1, "⏱️", "System Uptime", "02:14:30")
+        # Row 3
+        create_modern_card(self.stats_frame, 3, 0, "⏱️", "System Uptime", "02:14:30")
+        
+        # Start the background checking loop
+        self.update_audio_status()
+
+    def update_audio_status(self):
+        engine = get_engine()
+        # Check if the engine exists and is actively running the microphone loop
+        if engine and getattr(engine, 'is_running', False):
+            self.audio_status_label.configure(text="🟢 LISTENING...", text_color="#00FF00")
+        else:
+            self.audio_status_label.configure(text="🔴 OFFLINE", text_color="#D32F2F")
+            
+        # Loop this check every 1 second (1000 milliseconds)
+        self.after(1000, self.update_audio_status)

@@ -1,5 +1,9 @@
 import customtkinter as ctk
 import sys
+import re
+
+# Regex to clean terminal color codes from the UI text
+ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
 
 class PrintRedirector:
     def __init__(self, textbox):
@@ -8,14 +12,24 @@ class PrintRedirector:
         self.console = sys.__stdout__ 
 
     def write(self, text):
-        # 1. Safely write to background console ONLY if it exists
-        if self.console is not None:
+        # 1. Safely write to background console (keeps your colors in the terminal!)
+        if hasattr(self, 'console') and self.console is not None:
             try:
                 self.console.write(text)
             except Exception:
                 pass
                 
-        # 2. Always write to the GUI textbox
+        # 2. Strip color codes so the GUI doesn't get ugly symbols
+        clean_text = ansi_escape.sub('', text)
+        
+        # 3. CRITICAL THREAD FIX: Use .after() to tell the main thread to update the UI
+        if clean_text:
+            try:
+                self.textbox.after(0, self._thread_safe_insert, clean_text)
+            except Exception:
+                pass
+
+    def _thread_safe_insert(self, text):
         try:
             self.textbox.insert("end", text)
             self.textbox.see("end")
@@ -24,7 +38,7 @@ class PrintRedirector:
 
     def flush(self):
         # Safely flush background console ONLY if it exists
-        if self.console is not None:
+        if hasattr(self, 'console') and self.console is not None:
             try:
                 self.console.flush()
             except Exception:
@@ -79,7 +93,6 @@ class CommandPanel(ctk.CTkFrame):
             self.execute_backend_command(cmd_text)
 
     def execute_backend_command(self, command):
-        # TODO: Replace this with your actual robot communication logic
         # Because of PrintRedirector, these prints automatically show up in the GUI terminal!
         if command.lower() == "ping":
             print(">> ERROR: Destination unreachable. Verify robot IP.")

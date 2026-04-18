@@ -1,5 +1,8 @@
 import sys
-sys.stdout.reconfigure(encoding='utf-8')
+try:
+    sys.stdout.reconfigure(encoding='utf-8')
+except AttributeError:
+    pass  # Ignores error if stdout is already redirected by the UI
 
 import speech_recognition as sr
 import whisper
@@ -80,27 +83,31 @@ class STTEngine:
 
     def _init_database(self):
         self.db_path = os.path.join(get_base_path(), "stt_store.db")
-        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
-        cursor = self.conn.cursor()
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS transcripts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                text TEXT,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        # --- FIX: ALWAYS WIPE DATABASE ON ENGINE STARTUP ---
-        cursor.execute("DELETE FROM transcripts")
-        self.conn.commit()
+        # FIX 1: Open and close connection immediately to prevent UI database locks
+        with sqlite3.connect(self.db_path, timeout=10) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS transcripts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    text TEXT,
+                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            cursor.execute("DELETE FROM transcripts")
+            conn.commit()
         status_row("Database", "stt_store.db", "wiped and ready", "ok")
 
     def _store_in_db(self, text):
         if not text: return
-        cursor = self.conn.cursor()
-        cursor.execute("INSERT INTO transcripts (text) VALUES (?)", (text,))
-        # Keep only the last 50 messages to prevent DB bloating
-        cursor.execute("DELETE FROM transcripts WHERE id NOT IN (SELECT id FROM transcripts ORDER BY id DESC LIMIT 50)")
-        self.conn.commit()
+        # FIX 2: Thread-safe DB writing
+        try:
+            with sqlite3.connect(self.db_path, timeout=10) as conn:
+                cursor = conn.cursor()
+                cursor.execute("INSERT INTO transcripts (text) VALUES (?)", (text,))
+                cursor.execute("DELETE FROM transcripts WHERE id NOT IN (SELECT id FROM transcripts ORDER BY id DESC LIMIT 50)")
+                conn.commit()
+        except sqlite3.Error as e:
+            log_err(f"Database write error: {e}")
 
     def _detect_hardware(self):
         section("HARDWARE")
@@ -201,7 +208,6 @@ class STTEngine:
                     with open("temp_voice.wav", "wb") as f:
                         f.write(audio.get_wav_data())
 
-                    # --- FIX: PURE WHISPER DEFAULTS (No confusing initial_prompt) ---
                     result = self.model.transcribe(
                         "temp_voice.wav", 
                         language=self.target_language,
@@ -213,7 +219,6 @@ class STTEngine:
                         no_speech = segment.get("no_speech_prob", 0)
                         txt = segment.get("text", "").strip()
 
-                        # Basic sanity check to ignore static/breathing
                         if no_speech < 0.6 and len(txt) > 2:
                             valid_text_blocks.append(txt)
                             
