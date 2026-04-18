@@ -1,0 +1,1 @@
+print("[LOGS] db : lamma_aq.db loaded success....  ")

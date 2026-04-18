@@ -1,0 +1,20 @@
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Environments & IDEs
+.vscode/
+venv/
+env/
+
+# Databases (Local data)
+*.db
+
+# Compiled files
+*.exe
+
+# Temporary test folders
+!test/
+
+# Audio files
+*.wav
