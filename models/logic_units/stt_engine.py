@@ -217,7 +217,7 @@ class STTEngine:
                     result = self.model.transcribe(
                         "temp_voice.wav", 
                         language=self.target_language,
-                        fp16=fp16
+                        fp16=self.use_fp16
                     )
 
                     valid_text_blocks = []
