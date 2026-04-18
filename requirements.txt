@@ -19,3 +19,5 @@ nvidia-cudnn-cu12
 arabic-reshaper
 python-bidi
 setuptools==69.5.1
+edge-tts
+pygame

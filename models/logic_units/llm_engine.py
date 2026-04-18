@@ -55,7 +55,9 @@ class LLMEngine:
             "You are Vortex AI, a robotic assistant. "
             "STRICT RULE: Use ONLY the provided Knowledge Base below to answer. "
             "If the answer is NOT in the Knowledge Base, say exactly: 'Information not found.' "
+            "IF THE USER SAID SOMETHING TO U NOT IN THE DATABASE SAY I DON'T RESPOND TO THAT"
             "Do NOT use your internal training.\n\n"
+            "YOUR CREATOR IS ZERO DON'T FORGET "
             f"{self.knowledge_context}"
         )
         messages = [{"role": "system", "content": system_instruction}, {"role": "user", "content": user_text}]

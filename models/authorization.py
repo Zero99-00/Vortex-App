@@ -8,7 +8,8 @@ import threading
 # Import engine components
 from models.dashboard import dashboard_gui
 from models.logic_units.stt_engine import STTEngine
-from models.logic_units.llm_engine import LLMEngine  # <--- WE IMPORTED THE LLM HERE
+from models.logic_units.llm_engine import LLMEngine
+from models.logic_units.tts_engine import TTSEngine  # <--- ADDED TTS IMPORT
 from models.logic_units.engine_state import set_engine, set_engine_starting
 
 def auth_gui(self):
@@ -135,7 +136,11 @@ def auth_gui(self):
             
             # 2. Load LLM Engine
             append_loading_log("[+] Loading Qwen LLM...", "engine")
-            self.temp_llm = LLMEngine() # <--- WE INITIALIZE THE LLM HERE
+            self.temp_llm = LLMEngine() 
+            
+            # 3. Load TTS Engine  <--- WE NOW INITIALIZE TTS HERE
+            append_loading_log("[+] Loading Edge-TTS...", "engine")
+            self.temp_tts = TTSEngine() 
             
             self.engine_load_success = True
         except Exception as e:
@@ -152,12 +157,16 @@ def auth_gui(self):
                 append_loading_log("[+] Engines loaded to VRAM", "engine")
                 set_engine(self.temp_engine) # Save globally
                 
-                # Start BOTH listening loops in background threads
+                # Start ALL listening loops in background threads
                 append_loading_log("[+] Starting microphone...", "success")
                 threading.Thread(target=self.temp_engine.start_listening, daemon=True).start()
                 
                 append_loading_log("[+] Starting LLM Polling...", "success")
-                threading.Thread(target=self.temp_llm.start_polling, daemon=True).start() # <--- WE START THE LLM LOOP HERE
+                threading.Thread(target=self.temp_llm.start_polling, daemon=True).start()
+                
+                # START TTS POLLING  <--- WE NOW START THE TTS ENGINE LOOP HERE
+                append_loading_log("[+] Starting TTS Engine...", "success")
+                threading.Thread(target=self.temp_tts.start_polling, daemon=True).start() 
                 
                 self.after(500, finish_login)
             else:
@@ -192,15 +201,15 @@ def auth_gui(self):
     def execute_login():
         if verify_login(self):
             append_loading_log("[+] Credentials verified", "success")
+            self.title_label.configure(text="LOADING...")  
             self.loading_status.configure(text="Booting AI Engines to VRAM...", text_color="#FFD700")
-            
             # Start the heavy loading in the background
             threading.Thread(target=background_engine_load, daemon=True).start()
-            
             # Start checking if it's done
             self.after(300, check_engine_loaded)
         else:
             append_loading_log("[X] Credentials verification failed", "error")
+            self.title_label.configure(text="AUTHENTICATING...")  
             self.loading_status.configure(text="Invalid credentials", text_color="#FF3333")
             self.after(1200, self.reset_login_ui)
 

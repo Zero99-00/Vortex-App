@@ -1,10 +1,23 @@
-import sys, os
-# Quickly point to the root so absolute imports work
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-
+import multiprocessing
 from models.logic_units.stt_engine import STTEngine
+from models.logic_units.tts_engine import TTSEngine
+from models.logic_units.llm_engine import LLMEngine
+
+def run_llm():
+    llm = LLMEngine()
+    llm.start_polling()
+
+def run_tts():
+    tts = TTSEngine()
+    tts.start_polling()
 
 if __name__ == "__main__":
-    engine = STTEngine(model_size="medium")
-    engine.load_engine_to_vram()
-    engine.start_listening()
+    print("Spawning background processes...")
+    # Spawn LLM and TTS in fully separate processes so they don't block STT or UI
+    multiprocessing.Process(target=run_llm, daemon=True).start()
+    multiprocessing.Process(target=run_tts, daemon=True).start()
+    
+    # Run STT in the main process
+    stt = STTEngine()
+    stt.load_engine_to_vram()
+    stt.start_listening()
