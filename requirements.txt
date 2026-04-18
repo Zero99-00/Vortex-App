@@ -18,3 +18,4 @@ nvidia-cublas-cu12
 nvidia-cudnn-cu12
 arabic-reshaper
 python-bidi
+setuptools==69.5.1

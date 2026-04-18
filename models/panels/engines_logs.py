@@ -52,6 +52,10 @@ class PrintRedirector:
         def update_ui():
             try:
                 self.textbox.configure(state="normal")
+                current_view = self.textbox.yview()
+                at_bottom = current_view[1] >= 0.999
+                saved_top_index = self.textbox.index("@0,0")
+
                 parts = self.ansi_escape.split(text)
                 current_tags = []
                 
@@ -69,7 +73,11 @@ class PrintRedirector:
                             current_tags = [t for t in current_tags if not t.startswith("color_")]
                             current_tags.append(f"color_{part}")
 
-                self.textbox.see("end")
+                if at_bottom:
+                    self.textbox.see("end")
+                else:
+                    self.textbox.see(saved_top_index)
+
                 self.textbox.configure(state="disabled")
             except Exception:
                 pass
@@ -309,7 +317,7 @@ class EnginesLogsPanel(ctk.CTkFrame):
             set_engine_starting(False)
 
     def refresh_db_view(self):
-        db_path = os.path.join(get_base_path(), "stt_store.db")
+        db_path = os.path.join(get_base_path(), "engine_core.db")
         if os.path.exists(db_path):
             try:
                 conn = sqlite3.connect(db_path)
@@ -322,6 +330,11 @@ class EnginesLogsPanel(ctk.CTkFrame):
                 # Only redraw if the number of rows changed (prevents constant flickering)
                 if len(rows) != self.last_db_count:
                     self.db_textbox.configure(state="normal")
+
+                    current_view = self.db_textbox.yview()
+                    at_bottom = current_view[1] >= 0.999
+                    saved_top_index = self.db_textbox.index("@0,0")
+
                     self.db_textbox.delete("0.0", "end")
                     
                     if not rows:
@@ -338,8 +351,11 @@ class EnginesLogsPanel(ctk.CTkFrame):
                             self.db_textbox.insert("end", f"  {db_text}\n", "text_tag")
                             self.db_textbox.insert("end", "  " + "─"*70 + "\n\n", "divider")
                     
-                    # FIX: ALWAYS AUTO-SCROLL TO THE BOTTOM TO SEE THE NEWEST MESSAGE
-                    self.db_textbox.see("end")
+                    if at_bottom:
+                        self.db_textbox.see("end")
+                    else:
+                        self.db_textbox.see(saved_top_index)
+
                     self.db_textbox.configure(state="disabled")
                     self.last_db_count = len(rows)
                     
