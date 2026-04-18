@@ -16,3 +16,7 @@ def verify_login(self):
             self.username_entry.configure(border_width=2,border_color="#D32F2F")
             self.password_entry.configure(border_width=2,border_color="#D32F2F")
             self.password_entry.delete(0, "end")
+            self.username_entry.delete(0, "end")
+            # Reset UI to allow retry
+            self.reset_login_ui()
+            return
